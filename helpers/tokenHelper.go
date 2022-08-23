@@ -16,8 +16,8 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-// SignedDetails
-type SignedDetails struct {
+// AccessDetails
+type AccessDetails struct {
 	Email      string
 	First_name string
 	Last_name  string
@@ -31,19 +31,19 @@ var userCollection *mongo.Collection = database.OpenCollection(database.Client, 
 var SECRET_KEY string = os.Getenv("SECRET_KEY")
 
 // GenerateAllTokens generates both teh detailed token and refresh token
-func GenerateAllTokens(email string, firstName string, lastName string, userType string, uid string) (signedToken string, signedRefreshToken string, err error) {
-	claims := &SignedDetails{
+func GenerateAllTokens(email string, firstName string, lastName string, userType string, uid string) (accessToken string, accessRefreshToken string, err error) {
+	claims := &AccessDetails{
 		Email:      email,
 		First_name: firstName,
 		Last_name:  lastName,
 		Uid:        uid,
 		User_type:  userType,
 		StandardClaims: jwt.StandardClaims{
-			ExpiresAt: time.Now().Local().Add(time.Hour * time.Duration(24)).Unix(),
+			ExpiresAt: time.Now().Local().Add(time.Minute * time.Duration(1)).Unix(),
 		},
 	}
 
-	refreshClaims := &SignedDetails{
+	refreshClaims := &AccessDetails{
 		StandardClaims: jwt.StandardClaims{
 			ExpiresAt: time.Now().Local().Add(time.Hour * time.Duration(168)).Unix(),
 		},
@@ -61,10 +61,10 @@ func GenerateAllTokens(email string, firstName string, lastName string, userType
 }
 
 //ValidateToken validates the jwt token
-func ValidateToken(signedToken string) (claims *SignedDetails, msg string) {
+func ValidateToken(accessToken string) (claims *AccessDetails, msg string) {
 	token, err := jwt.ParseWithClaims(
-		signedToken,
-		&SignedDetails{},
+		accessToken,
+		&AccessDetails{},
 		func(token *jwt.Token) (interface{}, error) {
 			return []byte(SECRET_KEY), nil
 		},
@@ -75,7 +75,7 @@ func ValidateToken(signedToken string) (claims *SignedDetails, msg string) {
 		return
 	}
 
-	claims, ok := token.Claims.(*SignedDetails)
+	claims, ok := token.Claims.(*AccessDetails)
 	if !ok {
 		msg = fmt.Sprintf("the token is invalid")
 		msg = err.Error()
@@ -92,13 +92,13 @@ func ValidateToken(signedToken string) (claims *SignedDetails, msg string) {
 }
 
 //UpdateAllTokens renews the user tokens when they login
-func UpdateAllTokens(signedToken string, signedRefreshToken string, userId string) {
+func UpdateAllTokens(accessToken string, accessRefreshToken string, userId string) {
 	var ctx, cancel = context.WithTimeout(context.Background(), 100*time.Second)
 
 	var updateObj primitive.D
 
-	updateObj = append(updateObj, bson.E{"token", signedToken})
-	updateObj = append(updateObj, bson.E{"refresh_token", signedRefreshToken})
+	updateObj = append(updateObj, bson.E{"token", accessToken})
+	updateObj = append(updateObj, bson.E{"refresh_token", accessRefreshToken})
 
 	Updated_at, _ := time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
 	updateObj = append(updateObj, bson.E{"updated_at", Updated_at})
