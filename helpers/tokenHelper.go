@@ -30,26 +30,38 @@ var userCollection *mongo.Collection = database.OpenCollection(database.Client, 
 
 var SECRET_KEY string = os.Getenv("SECRET_KEY")
 
-// GenerateAllTokens generates both teh detailed token and refresh token
-func GenerateAllTokens(email string, firstName string, lastName string, userType string, uid string) (accessToken string, accessRefreshToken string, err error) {
+// GenerateAccessTokens and refresh token generates both teh detailed token and refresh token
+func GenerateAccessTokens(email string, firstName string, lastName string, userType string) (accessToken string, err error) {
 	claims := &AccessDetails{
 		Email:      email,
 		First_name: firstName,
 		Last_name:  lastName,
-		Uid:        uid,
 		User_type:  userType,
 		StandardClaims: jwt.StandardClaims{
 			ExpiresAt: time.Now().Local().Add(time.Minute * time.Duration(1)).Unix(),
 		},
 	}
 
+
+	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(SECRET_KEY))
+
+	if err != nil {
+		log.Panic(err)
+		return
+	}
+
+	return token, err
+}
+
+func GenerateRefreshTokens(uid string) ( accessRefreshToken string, err error) {
+
 	refreshClaims := &AccessDetails{
+		Uid:        uid,
 		StandardClaims: jwt.StandardClaims{
 			ExpiresAt: time.Now().Local().Add(time.Hour * time.Duration(168)).Unix(),
 		},
 	}
 
-	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(SECRET_KEY))
 	refreshToken, err := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims).SignedString([]byte(SECRET_KEY))
 
 	if err != nil {
@@ -57,7 +69,7 @@ func GenerateAllTokens(email string, firstName string, lastName string, userType
 		return
 	}
 
-	return token, refreshToken, err
+	return  refreshToken, err
 }
 
 //ValidateToken validates the jwt token

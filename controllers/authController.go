@@ -17,6 +17,10 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
+type RefreshTokenEntity struct {
+	refresh_token string
+}
+
 //CreateUser is the api used to tget a single user
 func SignUp() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -63,7 +67,9 @@ func SignUp() gin.HandlerFunc {
 		user.Updated_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
 		user.ID = primitive.NewObjectID()
 		user.User_id = user.ID.Hex()
-		token, refreshToken, _ := helper.GenerateAllTokens(*user.Email, *user.First_name, *user.Last_name, *user.User_type, *&user.User_id)
+
+		token, _ := helper.GenerateAccessTokens(*user.Email, *user.First_name, *user.Last_name, *user.User_type)
+		refreshToken, _ := helper.GenerateRefreshTokens( *&user.User_id)
 		user.Token = &token
 		user.Refresh_token = &refreshToken
 
@@ -91,7 +97,6 @@ func Login() gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-
 		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
 		err := userCollection.FindOne(ctx, bson.M{"email": user.Email}).Decode(&foundUser)
 		defer cancel()
@@ -111,8 +116,8 @@ func Login() gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "user not found"})
 			return
 		}
-		token, refreshToken, _ := helper.GenerateAllTokens(*foundUser.Email, *foundUser.First_name, *foundUser.Last_name, *foundUser.User_type, foundUser.User_id)
-
+		token, _ := helper.GenerateAccessTokens(*foundUser.Email, *foundUser.First_name, *foundUser.Last_name, *foundUser.User_type)
+		refreshToken, _ := helper.GenerateRefreshTokens( foundUser.User_id)
 		helper.UpdateAllTokens(token, refreshToken, foundUser.User_id)
 		err = userCollection.FindOne(ctx, bson.M{"user_id": foundUser.User_id}).Decode(&foundUser)
 
@@ -128,27 +133,44 @@ func Login() gin.HandlerFunc {
 
 func RefreshToken() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		user := models.User{}
+		var requestBody models.User
+		var user models.User
 
-		if err := c.ShouldBindJSON(&user); err != nil {
+		if err := c.BindJSON(&requestBody); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+
+		claims, err := helper.ValidateToken(*requestBody.Refresh_token)
+		if err != "" {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err})
+			c.Abort()
+			return
+		}
+
 		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
-		err := userCollection.FindOne(ctx, bson.M{"user_id": user.ID}).Decode(&user)
+		
+		_err := userCollection.FindOne(ctx, bson.M{"user_id": claims.Uid}).Decode(&user)
+
 		defer cancel()
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+
+		if _err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": _err.Error()})
 			return
 		}
-		helper.UpdateAllTokens(*user.Token, *user.Refresh_token, user.ID.String())
 
-		err = userCollection.FindOne(ctx, bson.M{"user_id": user.ID.String()}).Decode(&user)
+		token, _ := helper.GenerateAccessTokens(*user.Email, *user.First_name, *user.Last_name, *user.User_type)
 
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		helper.UpdateAllTokens(token, *requestBody.Refresh_token, user.User_id)
+		
+
+		_err = userCollection.FindOne(ctx, bson.M{"user_id": user.User_id}).Decode(&user)
+
+		if _err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": _err.Error()})
 			return
 		}
-		c.JSON(http.StatusOK, &user)
+
+		c.JSON(http.StatusOK, user)
 	}
 }
