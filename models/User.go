@@ -9,7 +9,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-//User is the model that governs all notes objects retrived or inserted into the DB
+// User is the model that governs all notes objects retrived or inserted into the DB
 type User struct {
 	ID            primitive.ObjectID `bson:"_id"`
 	First_name    *string            `json:"first_name" validate:"required,min=2,max=100"`
@@ -23,9 +23,10 @@ type User struct {
 	Created_at    time.Time          `json:"created_at"`
 	Updated_at    time.Time          `json:"updated_at"`
 	User_id       string             `json:"user_id"`
+	Project       []RoleProject      `json:"project"`
 }
 
-//HashPassword is used to encrypt the password before it is stored in the DB
+// HashPassword is used to encrypt the password before it is stored in the DB
 func HashPassword(password string) string {
 	bytes, err := bcrypt.GenerateFromPassword([]byte(password), 14)
 	if err != nil {
@@ -35,7 +36,7 @@ func HashPassword(password string) string {
 	return string(bytes)
 }
 
-//VerifyPassword checks the input password while verifying it with the passward in the DB.
+// VerifyPassword checks the input password while verifying it with the passward in the DB.
 func VerifyPassword(userPassword string, providedPassword string) (bool, string) {
 	err := bcrypt.CompareHashAndPassword([]byte(providedPassword), []byte(userPassword))
 	check := true

@@ -21,20 +21,20 @@ type RefreshTokenEntity struct {
 	refresh_token string
 }
 
-//CreateUser is the api used to tget a single user
+// CreateUser is the api used to tget a single user
 func SignUp() gin.HandlerFunc {
 	return func(c *gin.Context) {
 
 		var user models.User
 
 		if err := c.BindJSON(&user); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			helper.SendResponse(c, helper.Response{Status: http.StatusBadRequest, Error: []string{err.Error()}})
 			return
 		}
 
 		validationErr := validate.Struct(user)
 		if validationErr != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": validationErr.Error()})
+			helper.SendResponse(c, helper.Response{Status: http.StatusBadRequest, Error: []string{validationErr.Error()}})
 			return
 		}
 		var ctx, cancel = context.WithTimeout(context.Background(), 100*time.Second)
@@ -43,7 +43,7 @@ func SignUp() gin.HandlerFunc {
 		defer cancel()
 		if err != nil {
 			log.Panic(err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "error occured while checking for the email"})
+			helper.SendResponse(c, helper.Response{Status: http.StatusInternalServerError, Error: []string{"error occured while checking for the email"}})
 			return
 		}
 
@@ -54,12 +54,12 @@ func SignUp() gin.HandlerFunc {
 		defer cancel()
 		if err != nil {
 			log.Panic(err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "error occured while checking for the phone number"})
+			helper.SendResponse(c, helper.Response{Status: http.StatusInternalServerError, Error: []string{"error occured while checking for the phone number"}})
 			return
 		}
 
 		if count > 0 {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "this email or phone number already exists"})
+			helper.SendResponse(c, helper.Response{Status: http.StatusInternalServerError, Error: []string{"this email or phone number already exists"}})
 			return
 		}
 
@@ -68,25 +68,25 @@ func SignUp() gin.HandlerFunc {
 		user.ID = primitive.NewObjectID()
 		user.User_id = user.ID.Hex()
 
-		token, _ := helper.GenerateAccessTokens(*user.Email, *user.First_name, *user.Last_name, *user.User_type)
-		refreshToken, _ := helper.GenerateRefreshTokens( *&user.User_id)
+		token, _ := helper.GenerateAccessTokens(*user.Email, *user.First_name, *user.Last_name, *user.User_type, *&user.User_id)
+		refreshToken, _ := helper.GenerateRefreshTokens(*&user.User_id)
 		user.Token = &token
 		user.Refresh_token = &refreshToken
 
 		resultInsertionNumber, insertErr := userCollection.InsertOne(ctx, user)
 		if insertErr != nil {
 			msg := fmt.Sprintf("User item was not created")
-			c.JSON(http.StatusInternalServerError, gin.H{"error": msg})
+			helper.SendResponse(c, helper.Response{Status: http.StatusInternalServerError, Error: []string{msg}})
 			return
 		}
 		defer cancel()
 
-		c.JSON(http.StatusOK, resultInsertionNumber)
+		helper.SendResponse(c, helper.Response{Status: http.StatusOK, Data: resultInsertionNumber})
 
 	}
 }
 
-//Login is the api used to tget a single user
+// Login is the api used to tget a single user
 func Login() gin.HandlerFunc {
 	return func(c *gin.Context) {
 
@@ -94,39 +94,39 @@ func Login() gin.HandlerFunc {
 		var foundUser models.User
 
 		if err := c.ShouldBindJSON(&user); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			helper.SendResponse(c, helper.Response{Status: http.StatusBadRequest, Error: []string{err.Error()}})
 			return
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
 		err := userCollection.FindOne(ctx, bson.M{"email": user.Email}).Decode(&foundUser)
 		defer cancel()
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"status": "posted", "error": "login or passowrd is incorrect"})
+			helper.SendResponse(c, helper.Response{Status: http.StatusInternalServerError, Message: []string{"login or passowrd is incorrect"}})
 			return
 		}
 
 		passwordIsValid, msg := models.VerifyPassword(*user.Password, *foundUser.Password)
 		defer cancel()
 		if passwordIsValid != true {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": msg})
+			helper.SendResponse(c, helper.Response{Status: http.StatusInternalServerError, Error: []string{msg}})
 			return
 		}
 
 		if foundUser.Email == nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "user not found"})
+			helper.SendResponse(c, helper.Response{Status: http.StatusInternalServerError, Message: []string{"user not found"}})
 			return
 		}
-		token, _ := helper.GenerateAccessTokens(*foundUser.Email, *foundUser.First_name, *foundUser.Last_name, *foundUser.User_type)
-		refreshToken, _ := helper.GenerateRefreshTokens( foundUser.User_id)
+		token, _ := helper.GenerateAccessTokens(*foundUser.Email, *foundUser.First_name, *foundUser.Last_name, *foundUser.User_type, foundUser.User_id)
+		refreshToken, _ := helper.GenerateRefreshTokens(foundUser.User_id)
 		helper.UpdateAllTokens(token, refreshToken, foundUser.User_id)
 		err = userCollection.FindOne(ctx, bson.M{"user_id": foundUser.User_id}).Decode(&foundUser)
 
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			helper.SendResponse(c, helper.Response{Status: http.StatusInternalServerError, Error: []string{err.Error()}})
 			return
 		}
 
-		c.JSON(http.StatusOK, foundUser)
+		helper.SendResponse(c, helper.Response{Status: http.StatusOK, Data: foundUser})
 
 	}
 }
@@ -137,40 +137,45 @@ func RefreshToken() gin.HandlerFunc {
 		var user models.User
 
 		if err := c.BindJSON(&requestBody); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			helper.SendResponse(c, helper.Response{Status: http.StatusBadRequest, Error: []string{err.Error()}})
 			return
 		}
 
 		claims, err := helper.ValidateToken(*requestBody.Refresh_token)
 		if err != "" {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err})
+			helper.SendResponse(c, helper.Response{Status: http.StatusInternalServerError, Error: []string{err}})
 			c.Abort()
 			return
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
-		
+
 		_err := userCollection.FindOne(ctx, bson.M{"user_id": claims.Uid}).Decode(&user)
 
 		defer cancel()
 
 		if _err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": _err.Error()})
+			helper.SendResponse(c, helper.Response{Status: http.StatusInternalServerError, Error: []string{_err.Error()}})
 			return
 		}
 
-		token, _ := helper.GenerateAccessTokens(*user.Email, *user.First_name, *user.Last_name, *user.User_type)
+		if *user.Refresh_token != *requestBody.Refresh_token {
+			helper.SendResponse(c, helper.Response{Status: http.StatusInternalServerError, Message: []string{"Refresh token is wrong"}})
+			c.Abort()
+			return
+		}
+
+		token, _ := helper.GenerateAccessTokens(*user.Email, *user.First_name, *user.Last_name, *user.User_type, user.User_id)
 
 		helper.UpdateAllTokens(token, *requestBody.Refresh_token, user.User_id)
-		
 
 		_err = userCollection.FindOne(ctx, bson.M{"user_id": user.User_id}).Decode(&user)
 
 		if _err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": _err.Error()})
+			helper.SendResponse(c, helper.Response{Status: http.StatusInternalServerError, Error: []string{_err.Error()}})
 			return
 		}
 
-		c.JSON(http.StatusOK, user)
+		helper.SendResponse(c, helper.Response{Status: http.StatusOK, Data: user})
 	}
 }

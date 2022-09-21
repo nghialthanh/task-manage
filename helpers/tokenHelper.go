@@ -18,11 +18,12 @@ import (
 
 // AccessDetails
 type AccessDetails struct {
-	Email      string
-	First_name string
-	Last_name  string
-	Uid        string
-	User_type  string
+	Email        string
+	First_name   string
+	Last_name    string
+	Uid          string
+	User_type    string
+	access_token bool
 	jwt.StandardClaims
 }
 
@@ -31,17 +32,18 @@ var userCollection *mongo.Collection = database.OpenCollection(database.Client, 
 var SECRET_KEY string = os.Getenv("SECRET_KEY")
 
 // GenerateAccessTokens and refresh token generates both teh detailed token and refresh token
-func GenerateAccessTokens(email string, firstName string, lastName string, userType string) (accessToken string, err error) {
+func GenerateAccessTokens(email string, firstName string, lastName string, userType string, uid string) (accessToken string, err error) {
 	claims := &AccessDetails{
-		Email:      email,
-		First_name: firstName,
-		Last_name:  lastName,
-		User_type:  userType,
+		Email:        email,
+		First_name:   firstName,
+		Last_name:    lastName,
+		User_type:    userType,
+		Uid:          uid,
+		access_token: true,
 		StandardClaims: jwt.StandardClaims{
 			ExpiresAt: time.Now().Local().Add(time.Minute * time.Duration(1)).Unix(),
 		},
 	}
-
 
 	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(SECRET_KEY))
 
@@ -53,10 +55,11 @@ func GenerateAccessTokens(email string, firstName string, lastName string, userT
 	return token, err
 }
 
-func GenerateRefreshTokens(uid string) ( accessRefreshToken string, err error) {
+func GenerateRefreshTokens(uid string) (accessRefreshToken string, err error) {
 
 	refreshClaims := &AccessDetails{
-		Uid:        uid,
+		Uid:          uid,
+		access_token: false,
 		StandardClaims: jwt.StandardClaims{
 			ExpiresAt: time.Now().Local().Add(time.Hour * time.Duration(168)).Unix(),
 		},
@@ -69,10 +72,10 @@ func GenerateRefreshTokens(uid string) ( accessRefreshToken string, err error) {
 		return
 	}
 
-	return  refreshToken, err
+	return refreshToken, err
 }
 
-//ValidateToken validates the jwt token
+// ValidateToken validates the jwt token
 func ValidateToken(accessToken string) (claims *AccessDetails, msg string) {
 	token, err := jwt.ParseWithClaims(
 		accessToken,
@@ -103,7 +106,7 @@ func ValidateToken(accessToken string) (claims *AccessDetails, msg string) {
 	return claims, msg
 }
 
-//UpdateAllTokens renews the user tokens when they login
+// UpdateAllTokens renews the user tokens when they login
 func UpdateAllTokens(accessToken string, accessRefreshToken string, userId string) {
 	var ctx, cancel = context.WithTimeout(context.Background(), 100*time.Second)
 
